@@ -1,0 +1,21 @@
+# ── Secrets (NEVER commit these) ─────────────────────────────────────────────
+data/secrets.json
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Runtime output ────────────────────────────────────────────────────────────
+log/
+*.log
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

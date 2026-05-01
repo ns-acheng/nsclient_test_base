@@ -1,6 +1,13 @@
 """
 Project configuration loader for nsclient_test_base.
-Config is stored as JSON in data/config.json.
+
+Non-sensitive settings (URLs, usernames, flags) live in data/config.json.
+Sensitive values (API tokens, passwords) are stored encrypted via util_secrets
+and injected into the returned ProjectConfig automatically.
+
+To set up secrets:
+    python tool/manage_secrets.py init
+    python tool/manage_secrets.py set confluence_api_token
 """
 
 import json
@@ -55,12 +62,29 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         api_token=confluence_data.get("api_token", ""),
     )
 
-    return ProjectConfig(
+    config = ProjectConfig(
         tenant_hostname=data.get("tenant_hostname", ""),
         is_64bit=data.get("is_64bit", True),
         log_dir=data.get("log_dir", "log"),
         confluence=confluence,
     )
+
+    # Inject encrypted secrets — silently skipped if secrets store not set up
+    _inject_secrets(config)
+    return config
+
+
+def _inject_secrets(config: "ProjectConfig") -> None:
+    """Overwrite blank sensitive fields with values from the encrypted secrets store."""
+    try:
+        from util_secrets import get_secret, SECRET_CONFLUENCE_API_TOKEN
+        token = get_secret(SECRET_CONFLUENCE_API_TOKEN)
+        if token and not config.confluence.api_token:
+            config.confluence.api_token = token
+            log.debug("Injected confluence_api_token from secrets store")
+    except Exception:
+        # secrets store unavailable or key missing — silently continue
+        pass
 
 
 def save_config(config: ProjectConfig, path: Path | None = None) -> None:

@@ -165,8 +165,11 @@ log/                 # Log output (generated at runtime)
 
 ## NSClient Knowledge
 
+> Items marked **[ASSUMED]** need verification — see `knowledge_gap.md`.
+
 ### Key Paths
 
+#### Windows
 | Item | Path |
 |------|------|
 | nsconfig.json | `C:\ProgramData\netskope\stagent\nsconfig.json` |
@@ -177,21 +180,123 @@ log/                 # Log output (generated at runtime)
 | Install log | `C:\ProgramData\netskope\stagent\logs\nsInstallation.log` |
 | MSI download cache | `C:\ProgramData\netskope\stagent\download\STAgent.msi` |
 | Crash dumps | `C:\dump\stAgentSvc.exe\*.dmp`, `C:\ProgramData\netskope\stagent\logs\*.dmp` |
+| Hosts file | `C:\Windows\System32\drivers\etc\hosts` |
+
+#### macOS (✅ confirmed unless marked [ASSUMED])
+| Item | Path |
+|------|------|
+| nsconfig.json | `/Library/Application Support/Netskope/STAgent/nsconfig.json` [ASSUMED] |
+| Install dir | `/Applications/Netskope Client.app` |
+| nsdiag | `/Library/Application Support/Netskope/STAgent/nsdiag` [ASSUMED M6] |
+| Crash dumps | `~/Library/Logs/DiagnosticReports/Netskope Client*.ips` [ASSUMED] |
+| Logs | `/Library/Logs/Netskope/stAgent/nsdebuglog.log` [ASSUMED] |
+| Hosts file | `/etc/hosts` |
+
+#### Linux (✅ confirmed)
+| Item | Path |
+|------|------|
+| Install dir | `/opt/netskope/stagent/` |
+| nsconfig.json | `/opt/netskope/stagent/nsconfig.json` |
+| Config data | `/opt/netskope/stagent/data/` |
+| Service logs | `/opt/netskope/stagent/log/` or `/opt/netskope/stagent/logs/` |
+| User / CLI logs | `~/.netskope/stagent/` |
+| nsdiag | `/opt/netskope/stagent/nsdiag` |
+| Uninstall script | `/opt/netskope/stagent/uninstall.sh` |
+| Crash dumps | `/var/crash/*netskope*`, `/opt/netskope/stagent/log/core*` |
+| Hosts file | `/etc/hosts` |
 
 ### Services
 
-| Key | Service Name | Description |
-|-----|-------------|-------------|
-| client | `stAgentSvc` | Main client service |
-| watchdog | `stwatchdog` | Watchdog monitor service |
-| driver | `stadrv` | Driver service |
+#### Windows
+| Constant | Service Name | Description |
+|----------|-------------|-------------|
+| `SVC_CLIENT_WIN` | `stAgentSvc` | Main client service |
+| `SVC_WATCHDOG_WIN` | `stwatchdog` | Watchdog monitor |
+| `SVC_DRIVER_WIN` | `stadrv` | Driver service |
 
-### Key Executables
+#### macOS (✅ confirmed)
+| Constant | Label / plist | Description |
+|----------|--------------|-------------|
+| `SVC_CLIENT_MAC` | `com.netskope.client.auxsvc` | Main service — `/Library/LaunchDaemons/com.netskope.client.auxsvc.plist` |
+| `SVC_DRIVER_MAC` | unknown | See knowledge_gap.md M10 |
+| `SVC_WATCHDOG_MAC` | unknown | See knowledge_gap.md M11 |
 
+**macOS service control:**
+```bash
+# Stop
+sudo launchctl bootout  system /Library/LaunchDaemons/com.netskope.client.auxsvc.plist
+# Start
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.netskope.client.auxsvc.plist
+# Check
+sudo launchctl list | grep netskope
+```
+
+#### Linux (✅ confirmed)
+| Constant | Unit Name | Description |
+|----------|----------|-------------|
+| `SVC_CLIENT_LIN` | `stagentd` | Main daemon service |
+| `SVC_APP_LIN` | `stagentapp` | UI / app service |
+| `SVC_DRIVER_LIN` | unknown | See knowledge_gap.md L8 |
+| `SVC_WATCHDOG_LIN` | unknown | See knowledge_gap.md L9 |
+
+**Linux service control:**
+```bash
+sudo systemctl start stagentd.service
+sudo systemctl stop stagentd.service
+sudo systemctl restart stagentd.service
+systemctl status stagentd   # active (running)
+systemctl status stagentapp # active (running)
+```
+
+**Linux install formats:**
+```bash
+# .run file
+sudo chmod 755 STAgent.run && sudo ./STAgent.run
+# .run silent with email
+sudo ./STAgent.run -H <tenant> -o <orgKey> -m <email>
+# .run headless (no GUI)
+sudo ./STAgent.run -H <tenant> -o <orgKey> -m <email> -c
+# DEB
+sudo dpkg -i STAgent_amd64.deb
+# RPM
+sudo rpm -ivh STAgent_x86_64.rpm
+```
+
+**Linux uninstall:**
+```bash
+# .run installs
+cd /opt/netskope/stagent/ && sudo ./uninstall.sh
+# DEB
+sudo dpkg -r nsclient
+# RPM (find version first: rpm -qa | grep -i nsclient)
+sudo rpm -e nsclient-99.0.0-3060.x86_64
+```
+
+**Linux CLI tools:**
+```bash
+nsclient show-status   # "Internet Security Enabled"
+nsclient show-config   # gateway, org, user, tunnel, steering
+nsdiag -s              # tunnel status
+```
+
+### Key Processes
+
+#### Windows
 - `stAgentSvc.exe` — Main service
 - `stAgentUI.exe` — UI process
 - `stAgentSvcMon.exe` — Watchdog monitor (watchdog mode only)
 - `nsdiag.exe` — Diagnostic/sync tool
+
+#### macOS (✅ confirmed from ps aux)
+- `nsAuxiliarySvc` — Root XPC aux service (primary health indicator)
+- `Netskope Client` — User-space UI app (`/Applications/Netskope Client.app/...`)
+- `NetskopeClientMacAppProxy` — System extension (in `/Library/SystemExtensions/`)
+
+#### Linux (✅ confirmed)
+- `stAgentSvc` — Main daemon binary at `/opt/netskope/stagent/stAgentSvc`
+- `stagentd` / `stagentapp` — systemd service processes
+- `nsclient` — CLI tool (`nsclient show-status`, `nsclient show-config`)
+- `nsdiag` — Diagnostic tool (`nsdiag -s` for tunnel status)
 
 ### nsconfig.json
 

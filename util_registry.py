@@ -1,21 +1,27 @@
 """
 Windows registry helpers for NSClient state checks.
-winreg is a stdlib module — only available on Windows.
+
+On macOS and Linux the registry does not exist.  Functions return sensible
+no-op values (None / False) rather than crashing, so test code can call them
+unconditionally and gate on the return value.
+
+winreg is a Python stdlib module only available on Windows.
 """
 
 import logging
+import sys
 from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Paths searched for Add/Remove Programs entry
+# Paths searched for Add/Remove Programs entry (Windows only)
 UNINSTALL_REG_PATHS = [
     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
     r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
 ]
 UNINSTALL_DISPLAY_NAME = "Netskope Client"
 
-# Upgrade-in-progress flag
+# Upgrade-in-progress DWORD (Windows only)
 UPGRADE_REG_KEY = r"SOFTWARE\Netskope"
 UPGRADE_IN_PROGRESS_VALUE = "UpgradeInProgress"
 
@@ -48,13 +54,17 @@ class UninstallEntryResult:
 
 def check_uninstall_entry() -> UninstallEntryResult:
     """
-    Search HKLM uninstall registry paths for the Netskope Client entry.
-    Returns an UninstallEntryResult with details if found.
+    Windows: search HKLM uninstall paths for the Netskope Client entry.
+    macOS/Linux: returns found=False (no registry on these platforms).
     """
+    if not sys.platform.startswith("win"):
+        log.debug("check_uninstall_entry: not applicable on %s", sys.platform)
+        return UninstallEntryResult(found=False)
+
     try:
         import winreg
     except ImportError:
-        log.error("winreg not available — not running on Windows")
+        log.error("winreg not available")
         return UninstallEntryResult(found=False)
 
     for reg_path in UNINSTALL_REG_PATHS:
@@ -98,18 +108,20 @@ def check_uninstall_entry() -> UninstallEntryResult:
 
 def get_reg_dword(key_path: str, value_name: str) -> Optional[int]:
     """
-    Read a DWORD value from HKLM.
-    Returns the integer value, or None if the key/value does not exist.
+    Windows: read a DWORD from HKLM.
+    macOS/Linux: always returns None.
     """
+    if not sys.platform.startswith("win"):
+        return None
+
     try:
         import winreg
     except ImportError:
-        log.error("winreg not available")
         return None
 
     try:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
-            raw, reg_type = winreg.QueryValueEx(key, value_name)
+            raw, _ = winreg.QueryValueEx(key, value_name)
             return int(raw)
     except OSError:
         return None
@@ -120,13 +132,16 @@ def get_reg_dword(key_path: str, value_name: str) -> Optional[int]:
 
 def set_reg_dword(key_path: str, value_name: str, value: int) -> bool:
     """
-    Write a DWORD value to HKLM.  Creates the key if it does not exist.
-    Returns True on success.
+    Windows: write a DWORD to HKLM (creates the key if needed).
+    macOS/Linux: no-op, returns False.
     """
+    if not sys.platform.startswith("win"):
+        log.debug("set_reg_dword: no-op on %s", sys.platform)
+        return False
+
     try:
         import winreg
     except ImportError:
-        log.error("winreg not available")
         return False
 
     try:
@@ -139,11 +154,11 @@ def set_reg_dword(key_path: str, value_name: str, value: int) -> bool:
 
 
 def check_upgrade_in_progress() -> bool:
-    """Return True if the UpgradeInProgress DWORD is set (non-zero)."""
+    """Return True if the UpgradeInProgress DWORD is set (non-zero).  Always False on non-Windows."""
     val = get_reg_dword(UPGRADE_REG_KEY, UPGRADE_IN_PROGRESS_VALUE)
     return val is not None and val != 0
 
 
 def set_upgrade_in_progress(value: int = 1) -> bool:
-    """Set the UpgradeInProgress DWORD.  Pass 0 to clear."""
+    """Set the UpgradeInProgress DWORD.  Pass 0 to clear.  No-op on non-Windows."""
     return set_reg_dword(UPGRADE_REG_KEY, UPGRADE_IN_PROGRESS_VALUE, value)

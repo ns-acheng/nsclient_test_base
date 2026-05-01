@@ -1,49 +1,76 @@
 """
-Crash dump detection and log collection for NSClient.
-Uses nsdiag.exe -o to collect log bundles; scans known dump paths for .dmp files.
+Crash dump detection and log collection — Windows, macOS, Linux.
+
+Windows : .dmp files in well-known paths; nsdiag.exe -o for log bundles
+macOS   : .ips files in ~/Library/Logs/DiagnosticReports/  [ASSUMED — verify M6]
+Linux   : core files in /var/crash/, /var/log/netskope/    [ASSUMED]
 """
 
 import glob
 import logging
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Known crash dump search patterns
-CRASH_DUMP_PATTERNS = [
-    r"C:\dump\stAgentSvc.exe\*.dmp",
-    r"C:\ProgramData\netskope\stagent\logs\*.dmp",
-]
+# ── Crash dump patterns by platform ───────────────────────────────────────────
 
-# Constructed at runtime because %APPDATA% is user-specific
-_APPDATA_PATTERN = r"%APPDATA%\Netskope\stagent\Logs\*.dmp"
+if sys.platform.startswith("win"):
+    _DUMP_PATTERNS_STATIC = [
+        r"C:\dump\stAgentSvc.exe\*.dmp",
+        r"C:\ProgramData\netskope\stagent\logs\*.dmp",
+    ]
+    _DUMP_PATTERNS_DYNAMIC = [r"%APPDATA%\Netskope\stagent\Logs\*.dmp"]  # expanded at runtime
+    _NSDIAG_64 = Path(r"C:\Program Files\Netskope\STAgent\nsdiag.exe")
+    _NSDIAG_32 = Path(r"C:\Program Files (x86)\Netskope\STAgent\nsdiag.exe")
 
-_NSDIAG_64 = Path(r"C:\Program Files\Netskope\STAgent\nsdiag.exe")
-_NSDIAG_32 = Path(r"C:\Program Files (x86)\Netskope\STAgent\nsdiag.exe")
+elif sys.platform.startswith("darwin"):
+    # [ASSUMED: verify M6 in knowledge_gap.md]
+    _DUMP_PATTERNS_STATIC = []
+    _DUMP_PATTERNS_DYNAMIC = [
+        str(Path.home() / "Library/Logs/DiagnosticReports/Netskope Client*.ips"),
+        str(Path.home() / "Library/Logs/DiagnosticReports/nsdiag*.ips"),
+    ]
+    _NSDIAG_64 = Path.home() / "Library/Application Support/Netskope/STAgent/nsdiag"
+    _NSDIAG_32 = _NSDIAG_64
+
+else:  # Linux — confirmed paths
+    _DUMP_PATTERNS_STATIC = [
+        "/var/crash/*netskope*",
+        "/var/crash/*stagent*",
+        "/opt/netskope/stagent/log/core*",
+        "/opt/netskope/stagent/logs/core*",
+        "/tmp/core*",
+    ]
+    _DUMP_PATTERNS_DYNAMIC = []
+    _NSDIAG_64 = Path("/opt/netskope/stagent/nsdiag")
+    _NSDIAG_32 = _NSDIAG_64
 
 _NSDIAG_TIMEOUT = 120
 
 
+# ── Public API ─────────────────────────────────────────────────────────────────
+
 def check_crash_dumps(custom_dump_path: Optional[str] = None) -> tuple[bool, int]:
     """
-    Scan known crash dump directories for .dmp files.
+    Scan known crash dump/core directories for crash artifacts.
 
-    Zero-byte dumps are cleaned up automatically (they are incomplete artifacts).
+    Zero-byte files are removed automatically (incomplete artifacts).
 
     Args:
         custom_dump_path: Additional glob pattern to scan.
 
     Returns:
-        Tuple of (crash_found: bool, zero_byte_count: int).
-        crash_found is True if any non-zero-byte dump is detected.
+        (crash_found: bool, zero_byte_count: int)
     """
     import os
 
-    patterns = list(CRASH_DUMP_PATTERNS)
-    patterns.append(os.path.expandvars(_APPDATA_PATTERN))
+    patterns = list(_DUMP_PATTERNS_STATIC)
+    for p in _DUMP_PATTERNS_DYNAMIC:
+        patterns.append(os.path.expandvars(p))
     if custom_dump_path:
         patterns.append(custom_dump_path)
 
@@ -66,40 +93,51 @@ def check_crash_dumps(custom_dump_path: Optional[str] = None) -> tuple[bool, int
                 try:
                     Path(path).unlink()
                     zero_count += 1
-                    log.debug("Removed zero-byte dump: %s", path)
+                    log.debug("Removed zero-byte artifact: %s", path)
                 except OSError:
                     pass
             else:
-                log.error("CRASH DUMP DETECTED: %s (size=%d bytes)", path, size)
+                log.error("CRASH ARTIFACT DETECTED: %s (size=%d bytes)", path, size)
                 crash_found = True
 
     return crash_found, zero_count
 
 
 def collect_log_bundle(
-    is_64bit: bool,
-    output_dir: Path,
+    is_64bit: bool = True,
+    output_dir: Path = Path("log"),
     label: Optional[str] = None,
 ) -> Optional[Path]:
     """
-    Run ``nsdiag.exe -o <output_file>`` to produce a zipped log bundle.
+    Run ``nsdiag -o <output_file>`` to produce a compressed log bundle.
+
+    Works on all platforms — bundle format differs:
+    - Windows : .zip
+    - macOS   : .zip  [ASSUMED]
+    - Linux   : .tar.gz  [ASSUMED]
 
     Args:
-        is_64bit: Which nsdiag.exe to run.
-        output_dir: Directory where the bundle will be saved.
-        label: Optional filename label (defaults to a timestamp).
+        is_64bit: Which nsdiag to use (only meaningful on Windows).
+        output_dir: Directory to write the bundle.
+        label: Filename label (defaults to timestamp).
 
     Returns:
-        Path to the created zip file, or None on failure.
+        Path to the created bundle, or None on failure.
     """
-    nsdiag = _NSDIAG_64 if is_64bit else _NSDIAG_32
+    if sys.platform.startswith("win"):
+        nsdiag = _NSDIAG_64 if is_64bit else _NSDIAG_32
+        ext = ".zip"
+    else:
+        nsdiag = _NSDIAG_64
+        ext = ".tar.gz" if not sys.platform.startswith("darwin") else ".zip"
+
     if not nsdiag.exists():
-        log.error("nsdiag.exe not found: %s", nsdiag)
+        log.error("nsdiag not found: %s", nsdiag)
         return None
 
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = label or time.strftime("%Y%m%d_%H%M%S")
-    output_file = output_dir / f"{timestamp}_log_bundle.zip"
+    output_file = output_dir / f"{timestamp}_log_bundle{ext}"
 
     log.info("Collecting log bundle → %s", output_file)
     try:
@@ -108,10 +146,7 @@ def collect_log_bundle(
             capture_output=True, text=True, timeout=_NSDIAG_TIMEOUT,
         )
         if result.returncode != 0:
-            log.warning(
-                "nsdiag -o returned %d: %s",
-                result.returncode, result.stdout.strip()
-            )
+            log.warning("nsdiag -o returned %d: %s", result.returncode, result.stdout.strip())
     except Exception:
         log.exception("collect_log_bundle failed")
         return None

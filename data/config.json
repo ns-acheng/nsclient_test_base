@@ -4,7 +4,7 @@
     "log_dir": "log",
     "confluence": {
         "base_url": "https://netskope.atlassian.net/wiki",
-        "username": "",
+        "username": "acheng@netskope.com",
         "api_token": ""
     }
 }
