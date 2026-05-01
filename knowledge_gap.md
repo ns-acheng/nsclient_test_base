@@ -30,9 +30,10 @@ Items marked **✅ RESOLVED** are confirmed and already coded.
 | M4 | Does macOS need `nsdiag -u` post-install like Windows? Same 30s wait? | `util_nsclient.py` sync_config() | **[BLOCKED]** |
 | M5 | Is there a separate arm64 vs x86_64 `.pkg`? Different filename? | `util_install.py` | **[BLOCKED]** |
 | M6 | Exact path of `nsdiag` on macOS — currently assumed `/Library/Application Support/Netskope/STAgent/nsdiag` | `util_nsclient.py`, `util_crash.py` | **[ASSUMED]** |
+| M12 | Exact path of `nsdebuglog.log` on macOS — currently assumed `/Library/Logs/Netskope/stAgent/nsdebuglog.log` | `util_log_validator.py` | **[ASSUMED]** |
 | M8 | Is `nsclient_watchdog_monitor` in nsconfig.json on macOS? (likely Windows-only) | `util_nsclient.py` parse_nsconfig() | **[ASSUMED: Windows-only]** |
 | M10 | Is there a driver service on macOS equivalent to `stadrv`? If so, what is its plist label? | `util_service.py` SVC_DRIVER_MAC | **[BLOCKED]** |
-| M11 | Is there a watchdog service on macOS? plist label? | `util_service.py` SVC_WATCHDOG_MAC | **[BLOCKED]** |
+| M11 | ✅ Watchdog is Windows-only — no watchdog service exists on macOS | `util_service.py` SVC_WATCHDOG_MAC | **✅ RESOLVED: N/A** |
 | V1 | How to read installed version on macOS? (`pkgutil --pkg-info`? `Info.plist`? Binary `--version`?) | `util_nsclient.py` get_installed_version() | **[BLOCKED]** |
 | V3 | How to read version from a `.pkg` before installing? | `util_nsclient.py` get_installer_version() | **[BLOCKED]** |
 
@@ -72,6 +73,7 @@ Items marked **✅ RESOLVED** are confirmed and already coded.
 ## What Is Implemented vs. Blocked
 
 ### Fully implemented (all platforms)
+- Power management — Windows ✅ (pwrtest + ctypes fallback), macOS ✅ (pmset), Linux ✅ (stub/reboot only)
 - Service start/stop/query/wait — Windows ✅, macOS ✅, Linux ✅
 - Process detect/kill/wait — all platforms ✅
 - Registry helpers — Windows only ✅, graceful no-op on macOS/Linux ✅

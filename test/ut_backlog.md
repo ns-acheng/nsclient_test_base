@@ -62,6 +62,26 @@ Add entries here when code changes create coverage gaps.
 - `generate_markdown` — sections, test cases, raw fallback when no TCs found
 - `slugify` — special chars removed; length capped
 
+### util_log_validator.py
+- `NsClientLogValidator.seek_to_end` — position set to file size; pending_reads cleared
+- `NsClientLogValidator.check_log` — literal match in new content; advances position
+- `NsClientLogValidator.check_log_regex` — regex match with flags; advances position
+- `NsClientLogValidator.read_new_logs` — rotation via inode change; size rollback (Windows); pending drain
+- `NsClientLogValidator._scan_for_time` — finds byte position older than target_time; returns False when file empty
+- `NsClientLogValidator._find_by_inode` — finds rotated file by inode; returns None if not found
+- `init_validator` / `get_validator` — singleton init; RuntimeError when uninitialised
+- `check_log` / `check_log_regex` / `read_new_logs` module wrappers — delegate to singleton
+
+### util_power.py  (platform-gated)
+- `enter_s0_and_wake` — dispatches to win/mac/linux; Linux returns False
+- `enter_s1_and_wake` — dispatches correctly per platform
+- `enter_s4_and_wake` — Windows AOAC check skips pwrtest; macOS maps to s1
+- `is_sleep_state_available` — Windows: parses powercfg available section only; ZH-TW aliases
+- `enable_wake_timers` — Windows: 3 powercfg commands; macOS: True; Linux: False
+- `reboot` — correct command per platform
+- `_win_run_pwrtest` — returns False when pwrtest.exe missing
+- `_win_set_wake_timer` — returns None on CreateWaitableTimerW failure
+
 ### util_secrets.py
 - `init_key` — creates key file at correct path; chmod 600 on Unix; force=True overwrites
 - `store_secret` — auto-inits key on first call; ciphertext written to store; metadata updated

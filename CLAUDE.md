@@ -219,7 +219,7 @@ log/                 # Log output (generated at runtime)
 |----------|--------------|-------------|
 | `SVC_CLIENT_MAC` | `com.netskope.client.auxsvc` | Main service — `/Library/LaunchDaemons/com.netskope.client.auxsvc.plist` |
 | `SVC_DRIVER_MAC` | unknown | See knowledge_gap.md M10 |
-| `SVC_WATCHDOG_MAC` | unknown | See knowledge_gap.md M11 |
+| `SVC_WATCHDOG_MAC` | N/A | Watchdog is Windows-only — does not exist on macOS |
 
 **macOS service control:**
 ```bash

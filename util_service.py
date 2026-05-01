@@ -34,7 +34,7 @@ SVC_DRIVER_WIN    = "stadrv"
 # macOS — launchctl labels (plist basename without .plist)
 # Confirmed: com.netskope.client.auxsvc.plist in /Library/LaunchDaemons/
 SVC_CLIENT_MAC    = "com.netskope.client.auxsvc"
-SVC_WATCHDOG_MAC  = ""   # unknown — see knowledge_gap.md M11
+SVC_WATCHDOG_MAC  = ""   # N/A — watchdog is Windows-only (confirmed)
 SVC_DRIVER_MAC    = ""   # unknown — see knowledge_gap.md M10
 
 # Linux — systemctl unit names (confirmed)
