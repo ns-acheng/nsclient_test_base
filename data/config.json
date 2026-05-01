@@ -1,0 +1,10 @@
+{
+    "tenant_hostname": "",
+    "is_64bit": true,
+    "log_dir": "log",
+    "confluence": {
+        "base_url": "https://netskope.atlassian.net/wiki",
+        "username": "",
+        "api_token": ""
+    }
+}

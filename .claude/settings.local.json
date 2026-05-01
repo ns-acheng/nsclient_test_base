@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/git/**)",
+      "Bash(xargs grep *)",
+      "Bash(python *)",
+      "Bash(python3 -c \"import nsclient; print\\(nsclient.__file__\\)\")",
+      "Bash(python3 -c \"import sys; print\\('\\\\n'.join\\(sys.path\\)\\)\")",
+      "Bash(python3 *)",
+      "Bash(C:\\\\\\\\Python314\\\\\\\\python.exe *)"
+    ]
+  }
+}
