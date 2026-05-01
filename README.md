@@ -105,40 +105,113 @@ Edit `data/config.json` directly. Sensitive fields (api_token, password) are ign
 
 ## Workflow — NPLAN to Tests
 
-### 1. Fetch the test plan from Confluence
+### Step 1 — Fetch the test plan from Confluence
+
+Copy the Confluence page URL and run:
 
 ```
-python tool/fetch_test_plan.py https://netskope.atlassian.net/.../pages/123456 --nplan NPLAN-6711
+python tool/fetch_test_plan.py <confluence_url> --nplan NPLAN-XXXX
 ```
 
-Produces: `test_plans/nplan_6711_<slug>.md`
-
-The Confluence API token is injected automatically from the secrets store.
-
-### 2. Scaffold pytest from the Markdown
-
+Real example (NPLAN-6711):
 ```
-python tool/gen_test_suite.py test_plans/nplan_6711_<slug>.md
+python tool/fetch_test_plan.py https://netskope.atlassian.net/wiki/spaces/CDTBA/pages/7875198997 --nplan NPLAN-6711
 ```
 
-Produces: `features/nplan_6711_<slug>/conftest.py` + `test_<feature>.py`
-
-Preview without writing:
+Produces:
 ```
-python tool/gen_test_suite.py test_plans/<file>.md --dry-run
+test_plans/nplan-6711.md      ← structured Markdown with all test cases
+test_plans/nplan-6711.html    ← raw Confluence HTML (only with --save-html, for debugging)
 ```
 
-### 3. Implement and run the tests
+The output filename is always `test_plans/<nplan-id>.md` (e.g. `nplan-6711.md`).  
+The Confluence API token is injected automatically from the secrets store — no manual steps needed.
 
+To also save the raw HTML for parser debugging:
+```
+python tool/fetch_test_plan.py <url> --nplan NPLAN-6711 --save-html
+```
+
+To write to a custom path:
+```
+python tool/fetch_test_plan.py <url> --nplan NPLAN-6711 --output test_plans/my_name.md
+```
+
+**What gets extracted:**
+- Only rows that have an explicit ID in the Confluence table are kept — no invented IDs
+- Test case title = first paragraph of the description cell
+- Steps = bullet list items from the description cell
+- Priority, Platform normalised automatically (`P0/P1/P2`, `Windows`, `macOS`, `Linux`, `All`)
+- Section text (Feature Description, Scope, etc.) included above the test cases
+
+---
+
+### Step 2 — Scaffold pytest from the Markdown
+
+```
+python tool/gen_test_suite.py test_plans/nplan-6711.md
+```
+
+Produces:
+```
+features/nplan_6711_<slug>/
+    conftest.py          ← feature-specific fixture stubs
+    test_<slug>.py       ← one test_ function per test case
+```
+
+Preview without writing files:
+```
+python tool/gen_test_suite.py test_plans/nplan-6711.md --dry-run
+```
+
+Write to a custom folder:
+```
+python tool/gen_test_suite.py test_plans/nplan-6711.md --output features/nplan_6711_auto_reenable
+```
+
+Each test function gets:
+- Correct markers (`@pytest.mark.priority_high`, `@pytest.mark.windows`, `@pytest.mark.automated`, etc.)
+- Docstring with the full steps and expected result from the test plan
+- `raise NotImplementedError  # TODO: implement` for automatable tests
+- `pytest.skip("Manual test")` for manual tests
+
+---
+
+### Step 3 — Implement and run the tests
+
+Open the generated `test_<slug>.py` and replace each `raise NotImplementedError` with real
+test logic using the toolkit APIs (`util_service`, `util_nsclient`, `util_process`, etc.).
+
+Run the suite:
 ```
 python -m pytest features/nplan_6711_<slug>/ -v
 ```
 
 Filter by marker:
 ```
-python -m pytest features/ -m priority_high          # P0 only
-python -m pytest features/ -m "windows and automated"
-python -m pytest features/ -m "not manual"
+python -m pytest features/ -m priority_high           # P0 only
+python -m pytest features/ -m "windows and automated" # Windows automatable only
+python -m pytest features/ -m "not manual"            # skip manual tests
+```
+
+---
+
+### Full example — NPLAN-6711
+
+```
+# 1. Fetch
+python tool/fetch_test_plan.py \
+    https://netskope.atlassian.net/wiki/spaces/CDTBA/pages/7875198997 \
+    --nplan NPLAN-6711
+
+# 2. Scaffold
+python tool/gen_test_suite.py test_plans/nplan-6711.md
+
+# 3. Check what was created
+python -m pytest features/nplan_6711_wip_nplan_6711_auto_re_enable/ --co -q
+
+# 4. Run P0 tests only
+python -m pytest features/nplan_6711_wip_nplan_6711_auto_re_enable/ -m priority_high -v
 ```
 
 ---
