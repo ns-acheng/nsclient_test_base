@@ -3,3 +3,5 @@ pytest-mock>=3.0
 requests>=2.28
 beautifulsoup4>=4.12
 cryptography>=41.0
+# pywin32>=306  # Windows only — optional, enables tray tooltip in util_client_status.py
+#               # pip install pywin32  (then run: python Scripts/pywin32_postinstall.py -install)

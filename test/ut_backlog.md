@@ -5,6 +5,15 @@ Add entries here when code changes create coverage gaps.
 
 ## Pending Coverage
 
+### util_client_status.py  (platform-gated)
+- `_parse_win_tooltip` — each keyword branch: fail-closed, enabled+error, enabled+warning, disabled+error, disabled+warning, disabled, enabled, unknown
+- `_service_state_win` — RUNNING → Enabled; STOPPED → Disabled; other → Unknown
+- `_status_mac` — service RUNNING + proc running → Enabled; either missing → Disabled
+- `_nsclient_cli_linux` — "enabled" output → Enabled; "disabled" output → Disabled; empty output → None; FileNotFoundError → None
+- `_nsdiag_tunnel_linux` — "tunnel" + "up" → True; "tunnel" + "down" → False; exception → False
+- `_service_state_linux` — RUNNING → Enabled; STOPPED → Disabled
+- `is_client_enabled` / `is_client_disabled` — state membership checks
+
 ### util_log.py
 - `setup_logging` — console handler level, file handler creation, duplicate-handler guard
 
