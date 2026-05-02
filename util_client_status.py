@@ -1,58 +1,74 @@
 """
 Netskope Client status detection — Windows, macOS, Linux.
 
-Two-layer approach:
-  Layer C (service/daemon):  always available, no GUI required
-  Layer A (UI/tray/CLI):     richer state; platform-specific
+Primary source: `nsdiag -f` (all platforms)
+  Parses key::value lines from nsdiag output, e.g.:
+    Client status:: enable
+    Tunnel status:: NSTUNNEL_CONNECTED
 
-Windows:
-  Layer C — sc query stAgentSvc  →  RUNNING / STOPPED
-  Layer A — Win32 system tray tooltip via pywin32 (optional dep)
-            falls back silently to Layer C if pywin32 not installed
+  nsdiag path:
+    Windows : C:\\Program Files\\Netskope\\STAgent\\nsdiag.exe   (64-bit)
+              C:\\Program Files (x86)\\Netskope\\STAgent\\nsdiag.exe  (32-bit fallback)
+    macOS   : /Library/Application Support/Netskope/STAgent/nsdiag  [ASSUMED M6]
+    Linux   : /opt/netskope/stagent/nsdiag
 
-macOS:
-  Layer C — launchctl list com.netskope.client.auxsvc  →  RUNNING / STOPPED
-            (AppleScript menu bar query omitted — too fragile across macOS versions)
+Fallback: sc / launchctl / systemctl service state
+  STOPPED → Disabled  (unambiguous)
+  RUNNING → Unknown   (daemon alive but nsdiag unavailable)
 
-Linux:
-  Layer C — systemctl is-active stagentd  →  RUNNING / STOPPED
-  Layer A — `nsclient show-status` CLI  →  "Internet Security Enabled/Disabled"
-            `nsdiag -s` for tunnel detail
+Windows bonus: Netskope_MainFrame window title (pywin32, optional)
+  Used only to detect Unenrolled when nsdiag is unavailable.
 
 ClientStatus fields:
-  internet_security  "Enabled" | "Disabled" | "Disabled (error)" |
-                     "Disabled (fail-closed)" | "Enabled (warning)" |
-                     "Enabled (error)" | "Unknown"
-  tunnel_up          True  if the tunnel is active
-  source             "tray_tooltip" | "cli" | "service"  — which layer answered
-  raw                raw text from the winning source (for logging/debugging)
+  internet_security  "Enabled" | "Disabled" | "Unenrolled" |
+                     "Disabled (error)" | "Disabled (fail-closed)" |
+                     "Enabled (warning)" | "Enabled (error)" | "Unknown"
+  tunnel_up          True if Tunnel status is NSTUNNEL_CONNECTED
+  source             "nsdiag" | "tray_tooltip" | "service"
+  raw                raw "Client status::" value from nsdiag (for debugging)
 """
 
 import logging
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-# ── Optional pywin32 import (Windows tray tooltip) ────────────────────────────
+# ── Optional pywin32 import (Windows unenrolled detection) ────────────────────
 
 _HAS_PYWIN32 = False
 if sys.platform.startswith("win"):
     try:
         import win32gui   # type: ignore
-        import win32api   # type: ignore
-        import win32con   # type: ignore
         _HAS_PYWIN32 = True
     except ImportError:
-        log.debug("pywin32 not installed — tray tooltip unavailable, using service layer only")
+        pass
+
+
+# ── nsdiag paths ──────────────────────────────────────────────────────────────
+
+if sys.platform.startswith("win"):
+    _NSDIAG_PATHS = [
+        Path(r"C:\Program Files\Netskope\STAgent\nsdiag.exe"),
+        Path(r"C:\Program Files (x86)\Netskope\STAgent\nsdiag.exe"),
+    ]
+elif sys.platform.startswith("darwin"):
+    _NSDIAG_PATHS = [
+        Path("/Library/Application Support/Netskope/STAgent/nsdiag"),  # [ASSUMED M6]
+    ]
+else:
+    _NSDIAG_PATHS = [
+        Path("/opt/netskope/stagent/nsdiag"),
+    ]
 
 
 # ── Public types ───────────────────────────────────────────────────────────────
 
-# Canonical status strings — same values used on all platforms
 STATUS_ENABLED          = "Enabled"
 STATUS_DISABLED         = "Disabled"
+STATUS_UNENROLLED       = "Unenrolled"
 STATUS_ENABLED_WARNING  = "Enabled (warning)"
 STATUS_ENABLED_ERROR    = "Enabled (error)"
 STATUS_DISABLED_WARNING = "Disabled (warning)"
@@ -65,19 +81,20 @@ STATUS_UNKNOWN          = "Unknown"
 class ClientStatus:
     """Normalised Netskope Client status — same structure on all platforms."""
     internet_security: str   # one of the STATUS_* constants above
-    tunnel_up: bool          # True if the tunnel is established
-    source: str              # "tray_tooltip" | "cli" | "service"
-    raw: str                 # raw text from the winning source
+    tunnel_up: bool          # True if tunnel is NSTUNNEL_CONNECTED
+    source: str              # "nsdiag" | "tray_tooltip" | "service"
+    raw: str                 # raw value from the winning source (for debugging)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def get_client_status() -> ClientStatus:
     """
-    Return the current Netskope Client status using the best available method
-    for the running platform.
+    Return the current Netskope Client status.
 
-    Never raises — returns STATUS_UNKNOWN on any unexpected failure.
+    Primary: nsdiag -f (all platforms).
+    Fallback: service state (STOPPED=Disabled) or tray title (Unenrolled).
+    Never raises.
     """
     try:
         if sys.platform.startswith("win"):
@@ -87,170 +104,175 @@ def get_client_status() -> ClientStatus:
         return _status_linux()
     except Exception:
         log.exception("get_client_status: unexpected error")
-        return ClientStatus(
-            internet_security=STATUS_UNKNOWN,
-            tunnel_up=False,
-            source="service",
-            raw="",
-        )
+        return ClientStatus(STATUS_UNKNOWN, tunnel_up=False, source="service", raw="")
 
 
 def is_client_enabled() -> bool:
-    """Return True if internet security is in an Enabled state (with or without warnings)."""
-    status = get_client_status()
-    return status.internet_security in (STATUS_ENABLED, STATUS_ENABLED_WARNING, STATUS_ENABLED_ERROR)
+    """Return True if internet security is in any Enabled state."""
+    return get_client_status().internet_security in (
+        STATUS_ENABLED, STATUS_ENABLED_WARNING, STATUS_ENABLED_ERROR,
+    )
 
 
 def is_client_disabled() -> bool:
-    """Return True if all services are disabled."""
-    status = get_client_status()
-    return status.internet_security in (
-        STATUS_DISABLED,
-        STATUS_DISABLED_WARNING,
-        STATUS_DISABLED_ERROR,
-        STATUS_FAIL_CLOSED,
+    """Return True if internet security is in any Disabled state."""
+    return get_client_status().internet_security in (
+        STATUS_DISABLED, STATUS_DISABLED_WARNING, STATUS_DISABLED_ERROR, STATUS_FAIL_CLOSED,
     )
+
+
+# ── nsdiag -f parser (all platforms) ──────────────────────────────────────────
+
+def _find_nsdiag() -> "Path | None":
+    """Return the first nsdiag executable that exists."""
+    for p in _NSDIAG_PATHS:
+        if p.exists():
+            return p
+    return None
+
+
+def _run_nsdiag_f() -> "ClientStatus | None":
+    """
+    Run `nsdiag -f` and parse the output into a ClientStatus.
+
+    Key lines (case-insensitive):
+      Client status:: enable | disable | unenrolled | error | fail close
+      Tunnel status:: NSTUNNEL_CONNECTED | NSTUNNEL_DISCONNECTED | ...
+
+    Returns None if nsdiag is not found or the output is unparseable.
+    """
+    nsdiag = _find_nsdiag()
+    if nsdiag is None:
+        log.debug("nsdiag not found")
+        return None
+
+    try:
+        result = subprocess.run(
+            [str(nsdiag), "-f"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except Exception:
+        log.debug("nsdiag -f failed", exc_info=True)
+        return None
+
+    output = result.stdout + result.stderr
+    if not output.strip():
+        log.debug("nsdiag -f produced no output")
+        return None
+
+    log.debug("nsdiag -f output:\n%s", output)
+
+    client_raw = _parse_nsdiag_field(output, "client status")
+    tunnel_raw = _parse_nsdiag_field(output, "tunnel status")
+
+    if client_raw is None:
+        log.debug("nsdiag -f: 'Client status' field not found")
+        return None
+
+    state = _map_client_status(client_raw)
+    tunnel_up = (
+        tunnel_raw is not None
+        and "connected" in tunnel_raw.lower()
+        and state in (STATUS_ENABLED, STATUS_ENABLED_WARNING, STATUS_ENABLED_ERROR)
+    )
+
+    return ClientStatus(
+        internet_security=state,
+        tunnel_up=tunnel_up,
+        source="nsdiag",
+        raw=client_raw,
+    )
+
+
+def _parse_nsdiag_field(output: str, field: str) -> "str | None":
+    """
+    Extract value from a `field:: value` line in nsdiag -f output.
+    Field matching is case-insensitive; trailing dot stripped.
+    """
+    field_lower = field.lower()
+    for line in output.splitlines():
+        if "::" not in line:
+            continue
+        key, _, value = line.partition("::")
+        if key.strip().lower() == field_lower:
+            return value.strip().rstrip(".")
+    return None
+
+
+def _map_client_status(raw: str) -> str:
+    """Map the raw 'Client status' value to a STATUS_* constant."""
+    r = raw.lower().strip()
+    if r in ("enable", "enabled"):
+        return STATUS_ENABLED
+    if r in ("disable", "disabled"):
+        return STATUS_DISABLED
+    if "unenroll" in r or "enroll" in r:
+        return STATUS_UNENROLLED
+    if "fail" in r and ("close" in r or "closed" in r):
+        return STATUS_FAIL_CLOSED
+    if "error" in r:
+        return STATUS_DISABLED_ERROR
+    if "warn" in r:
+        return STATUS_ENABLED_WARNING
+    log.debug("nsdiag: unrecognised client status: %r", raw)
+    return STATUS_UNKNOWN
 
 
 # ── Windows ────────────────────────────────────────────────────────────────────
 
 def _status_win() -> ClientStatus:
-    """
-    Windows: try tray tooltip first (Layer A), fall back to service state (Layer C).
+    status = _run_nsdiag_f()
+    if status is not None:
+        return status
 
-    The tray tooltip is the most faithful reflection of what the user sees.
-    Tooltip text examples (from Netskope docs):
-      "Netskope Internet Security: Enabled"
-      "Netskope Internet Security disabled for X minutes"
-      "Netskope Internet Security: Disabled due to error"
-      "Netskope Internet Security: Fail Closed"
-    """
+    # nsdiag unavailable — check for unenrolled state via window title
     if _HAS_PYWIN32:
-        status = _tray_tooltip_win()
-        if status is not None:
-            return status
-        log.debug("_status_win: tray tooltip not found, falling back to service state")
+        win_status = _mainframe_title_win()
+        if win_status is not None:
+            return win_status
 
     return _service_state_win()
 
 
-def _tray_tooltip_win() -> "ClientStatus | None":
+def _mainframe_title_win() -> "ClientStatus | None":
     """
-    Walk the Shell_TrayWnd → ToolbarWindow32 hierarchy looking for a button
-    whose tooltip contains "Netskope".  Returns None if not found.
-
-    This requires the stAgentUI.exe tray icon to be visible.
+    Read Netskope_MainFrame window title — only reliable for Unenrolled detection.
+    Returns None if stAgentUI is not running or title doesn't indicate unenrolled.
     """
     try:
-        tooltip = _find_tray_tooltip("Netskope")
-        if not tooltip:
+        hwnd = win32gui.FindWindow("Netskope_MainFrame", None)
+        if not hwnd:
             return None
-        log.debug("Tray tooltip found: %r", tooltip)
-        return _parse_win_tooltip(tooltip)
+        title = win32gui.GetWindowText(hwnd)
+        log.debug("Netskope_MainFrame title: %r", title)
+        if "enroll" in title.lower():
+            return ClientStatus(STATUS_UNENROLLED, tunnel_up=False, source="tray_tooltip", raw=title)
     except Exception:
-        log.debug("_tray_tooltip_win: failed", exc_info=True)
-        return None
-
-
-def _find_tray_tooltip(keyword: str) -> str:
-    """
-    Enumerate all buttons in the system tray toolbars and return the tooltip
-    of the first button whose text contains ``keyword`` (case-insensitive).
-
-    Searches both the visible tray (Shell_TrayWnd) and the overflow tray
-    (NotifyIconOverflowWindow).
-    """
-    kw = keyword.lower()
-    results: list[str] = []
-
-    def _enum_toolbar(hwnd: int) -> None:
-        count = win32api.SendMessage(hwnd, win32con.TB_BUTTONCOUNT, 0, 0)
-        for i in range(count):
-            try:
-                # TB_GETBUTTONTEXTW returns the button tooltip text
-                buf_len = 256
-                buf = win32gui.PyMakeBuffer(buf_len * 2)
-                length = win32api.SendMessage(hwnd, win32con.TB_GETBUTTONTEXTW, i, buf)
-                if length > 0:
-                    text = buf[:length * 2].tobytes().decode("utf-16-le", errors="ignore")
-                    if kw in text.lower():
-                        results.append(text)
-            except Exception:
-                pass
-
-    def _enum_children(hwnd: int, _lparam: int) -> bool:
-        cls = win32gui.GetClassName(hwnd)
-        if cls == "ToolbarWindow32":
-            _enum_toolbar(hwnd)
-        return True  # continue enumeration
-
-    for root_cls in ("Shell_TrayWnd", "NotifyIconOverflowWindow"):
-        root = win32gui.FindWindow(root_cls, None)
-        if root:
-            win32gui.EnumChildWindows(root, _enum_children, None)
-
-    return results[0] if results else ""
-
-
-def _parse_win_tooltip(tooltip: str) -> ClientStatus:
-    """Map a tray tooltip string to a ClientStatus."""
-    t = tooltip.lower()
-
-    if "fail" in t and "close" in t:
-        state = STATUS_FAIL_CLOSED
-    elif "error" in t and "enabl" in t:
-        state = STATUS_ENABLED_ERROR
-    elif "warning" in t and "enabl" in t:
-        state = STATUS_ENABLED_WARNING
-    elif "error" in t:
-        state = STATUS_DISABLED_ERROR
-    elif "warning" in t:
-        state = STATUS_DISABLED_WARNING
-    elif "disab" in t:
-        state = STATUS_DISABLED
-    elif "enabl" in t:
-        state = STATUS_ENABLED
-    else:
-        state = STATUS_UNKNOWN
-
-    tunnel_up = state in (STATUS_ENABLED, STATUS_ENABLED_WARNING, STATUS_ENABLED_ERROR)
-    return ClientStatus(
-        internet_security=state,
-        tunnel_up=tunnel_up,
-        source="tray_tooltip",
-        raw=tooltip,
-    )
+        log.debug("_mainframe_title_win failed", exc_info=True)
+    return None
 
 
 def _service_state_win() -> ClientStatus:
-    """Layer C fallback: infer status from sc query stAgentSvc."""
+    """Last-resort: sc query stAgentSvc. Only STOPPED is unambiguous."""
     from util_service import query_service, SVC_CLIENT_WIN
     info = query_service(SVC_CLIENT_WIN)
-    if info.state == "RUNNING":
-        return ClientStatus(STATUS_ENABLED, tunnel_up=True, source="service", raw=info.state)
     if info.state == "STOPPED":
         return ClientStatus(STATUS_DISABLED, tunnel_up=False, source="service", raw=info.state)
+    log.warning("stAgentSvc is %s but nsdiag is unavailable — status unknown.", info.state)
     return ClientStatus(STATUS_UNKNOWN, tunnel_up=False, source="service", raw=info.state)
 
 
 # ── macOS ──────────────────────────────────────────────────────────────────────
 
 def _status_mac() -> ClientStatus:
-    """
-    macOS: Layer C only — launchctl + nsAuxiliarySvc process check.
+    status = _run_nsdiag_f()
+    if status is not None:
+        return status
 
-    The menu bar icon state is not queried (AppleScript is fragile across
-    macOS versions and requires specific accessibility permissions).
-    """
     from util_service import query_service, SVC_CLIENT_MAC
     from util_process import is_process_running, PROC_CLIENT_MAC
-
     svc = query_service(SVC_CLIENT_MAC)
-    proc_running = is_process_running(PROC_CLIENT_MAC)
-
-    if svc.state == "RUNNING" and proc_running:
-        return ClientStatus(STATUS_ENABLED, tunnel_up=True, source="service", raw=svc.state)
-    if svc.state in ("STOPPED", "NOT_FOUND") or not proc_running:
+    if svc.state in ("STOPPED", "NOT_FOUND") or not is_process_running(PROC_CLIENT_MAC):
         return ClientStatus(STATUS_DISABLED, tunnel_up=False, source="service", raw=svc.state)
     return ClientStatus(STATUS_UNKNOWN, tunnel_up=False, source="service", raw=svc.state)
 
@@ -258,89 +280,12 @@ def _status_mac() -> ClientStatus:
 # ── Linux ──────────────────────────────────────────────────────────────────────
 
 def _status_linux() -> ClientStatus:
-    """
-    Linux: Layer A first — `nsclient show-status` CLI, fall back to systemctl (Layer C).
+    status = _run_nsdiag_f()
+    if status is not None:
+        return status
 
-    `nsclient show-status` output examples:
-      "Internet Security Enabled"
-      "Internet Security Disabled"
-    """
-    cli_status = _nsclient_cli_linux()
-    if cli_status is not None:
-        return cli_status
-
-    log.debug("_status_linux: nsclient CLI unavailable, falling back to systemctl")
-    return _service_state_linux()
-
-
-def _nsclient_cli_linux() -> "ClientStatus | None":
-    """
-    Run `nsclient show-status` and parse the output.
-    Returns None if the command is not found or fails.
-    """
-    try:
-        result = subprocess.run(
-            ["nsclient", "show-status"],
-            capture_output=True, text=True, timeout=10,
-        )
-    except FileNotFoundError:
-        log.debug("nsclient binary not found in PATH")
-        return None
-    except Exception:
-        log.debug("nsclient show-status failed", exc_info=True)
-        return None
-
-    output = result.stdout.strip()
-    if not output:
-        return None
-
-    low = output.lower()
-    if "enabled" in low:
-        state = STATUS_ENABLED
-        tunnel_up = True
-    elif "disabled" in low:
-        state = STATUS_DISABLED
-        tunnel_up = False
-    else:
-        log.debug("nsclient show-status: unrecognised output: %r", output)
-        return None
-
-    # Optionally refine tunnel_up via nsdiag -s
-    tunnel_up = _nsdiag_tunnel_linux() if state == STATUS_ENABLED else False
-
-    return ClientStatus(
-        internet_security=state,
-        tunnel_up=tunnel_up,
-        source="cli",
-        raw=output,
-    )
-
-
-def _nsdiag_tunnel_linux() -> bool:
-    """
-    Run `nsdiag -s` and check if tunnel is up.
-    Returns True if output indicates tunnel is active, False on any failure.
-    """
-    try:
-        result = subprocess.run(
-            ["nsdiag", "-s"],
-            capture_output=True, text=True, timeout=10,
-        )
-        low = result.stdout.lower()
-        # nsdiag -s typically outputs "Tunnel: Up" or "Tunnel: Down"
-        if "tunnel" in low:
-            return "up" in low and "down" not in low
-    except Exception:
-        pass
-    return False
-
-
-def _service_state_linux() -> ClientStatus:
-    """Layer C fallback: systemctl is-active stagentd."""
     from util_service import query_service, SVC_CLIENT_LIN
     info = query_service(SVC_CLIENT_LIN)
-    if info.state == "RUNNING":
-        return ClientStatus(STATUS_ENABLED, tunnel_up=True, source="service", raw=info.state)
     if info.state == "STOPPED":
         return ClientStatus(STATUS_DISABLED, tunnel_up=False, source="service", raw=info.state)
     return ClientStatus(STATUS_UNKNOWN, tunnel_up=False, source="service", raw=info.state)

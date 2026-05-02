@@ -176,14 +176,16 @@ def _build_markers(tc: dict) -> list[str]:
     """Build pytest marker decorators for a test case."""
     markers = []
 
-    # Priority marker
+    # Priority markers — long form + short alias so users can filter by either
     priority_map = {
-        "P0": "priority_high",
-        "P1": "priority_medium",
-        "P2": "priority_low",
+        "P0": ("priority_high", "p0"),
+        "P1": ("priority_medium", "p1"),
+        "P2": ("priority_low", "p2"),
     }
     if tc["priority"] in priority_map:
-        markers.append(f"@pytest.mark.{priority_map[tc['priority']]}")
+        long, short = priority_map[tc["priority"]]
+        markers.append(f"@pytest.mark.{long}")
+        markers.append(f"@pytest.mark.{short}")
 
     # Platform marker
     platform = tc.get("platform", "All").lower()

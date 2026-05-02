@@ -178,6 +178,73 @@ def sync_config(is_64bit: bool = True, wait_sec: float = 30) -> bool:
     return result.returncode == 0
 
 
+# ── Client enable / disable ───────────────────────────────────────────────────
+
+def _find_nsdiag() -> Optional[Path]:
+    """Return the first nsdiag executable that exists on the running platform."""
+    if sys.platform.startswith("win"):
+        candidates = [NSDIAG_PATH_64, NSDIAG_PATH_32]
+    else:
+        candidates = [NSDIAG_PATH_64]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def disable_client(password: Optional[str] = None) -> bool:
+    """
+    Disable the Netskope Client via ``nsdiag -t disable``.
+
+    Args:
+        password: OTP password for tenants that require one.
+                  Maps to ``nsdiag -t disable --password <pw>``.
+    """
+    nsdiag = _find_nsdiag()
+    if nsdiag is None:
+        log.error("nsdiag not found — cannot disable client")
+        return False
+
+    cmd: list[str] = [str(nsdiag), "-t", "disable"]
+    if password:
+        cmd += ["--password", password]
+
+    log.info("Disabling client: %s", " ".join(cmd[:3]) + (" --password ***" if password else ""))
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            log.error("nsdiag -t disable rc=%d: %s", result.returncode, result.stdout.strip())
+            return False
+        log.info("Client disabled")
+        return True
+    except Exception:
+        log.exception("nsdiag -t disable failed")
+        return False
+
+
+def enable_client() -> bool:
+    """Re-enable the Netskope Client via ``nsdiag -t enable``."""
+    nsdiag = _find_nsdiag()
+    if nsdiag is None:
+        log.error("nsdiag not found — cannot enable client")
+        return False
+
+    log.info("Enabling client: nsdiag -t enable")
+    try:
+        result = subprocess.run(
+            [str(nsdiag), "-t", "enable"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            log.error("nsdiag -t enable rc=%d: %s", result.returncode, result.stdout.strip())
+            return False
+        log.info("Client enabled")
+        return True
+    except Exception:
+        log.exception("nsdiag -t enable failed")
+        return False
+
+
 # ── Install directory ──────────────────────────────────────────────────────────
 
 def detect_install_dir() -> Optional[Path]:

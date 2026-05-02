@@ -53,6 +53,7 @@ Store only the secrets you actually need. Full list of known names:
 | `enroll_auth_token` | IDP install mode `enrollauthtoken=` |
 | `enroll_encryption_token` | IDP install mode `enrollencryptiontoken=` |
 | `uninstall_password` | NSClient uninstall password (if protection is enabled) |
+| `tenant_password` | Tenant admin console login password (for WebAPI test setup) |
 
 ### Step 3 — Verify
 
@@ -189,19 +190,21 @@ python -m pytest features/nplan_6711_<slug>/ -v
 
 Filter by marker:
 ```
-python -m pytest features/ -m priority_high           # P0 only
+python -m pytest features/ -m p0                      # P0 only
+python -m pytest features/ -m p1                      # P1 only
+python -m pytest features/ -m "p0 and windows"        # P0 Windows only
 python -m pytest features/ -m "windows and automated" # Windows automatable only
 python -m pytest features/ -m "not manual"            # skip manual tests
 ```
 
 ---
 
-### Full example — NPLAN-6711
+### Full example — scaffold workflow
 
 ```
 # 1. Fetch
-python tool/fetch_test_plan.py \
-    https://netskope.atlassian.net/wiki/spaces/CDTBA/pages/7875198997 \
+python tool/fetch_test_plan.py ^
+    https://netskope.atlassian.net/wiki/spaces/CDTBA/pages/7875198997 ^
     --nplan NPLAN-6711
 
 # 2. Scaffold
@@ -213,6 +216,71 @@ python -m pytest features/nplan_6711_wip_nplan_6711_auto_re_enable/ --co -q
 # 4. Run P0 tests only
 python -m pytest features/nplan_6711_wip_nplan_6711_auto_re_enable/ -m priority_high -v
 ```
+
+---
+
+## Implemented Feature Tests
+
+### NPLAN-6711: Auto Re-enable NSClient after Disable
+
+**Location:** `features/nplan_6711_auto_reenable/`
+
+```
+features/nplan_6711_auto_reenable/
+    conftest.py              # session fixtures, ensure_client_enabled, assert_auto_reenable helper
+    test_auto_reenable.py    # A01, A02, A03
+```
+
+**Test cases:**
+
+| ID  | Function | Priority | Platform | What it tests |
+|-----|----------|----------|----------|---------------|
+| A01 | `test_a01_auto_reenable_3min` | P0 | All | Disable → auto re-enable after 3 min timer |
+| A02 | `test_a02_auto_reenable_10min_otp` | P0 | Windows | Disable with OTP → auto re-enable after 10 min |
+| A03 | `test_a03_ff_off_no_auto_reenable` | P1 | All | FF off → disable stays disabled (negative) |
+
+**Prerequisites — one-time setup only:**
+
+1. Set `tenant_hostname` and `tenant_username` in `data/config.json`
+2. Store the tenant admin password:
+   `python tool/manage_secrets.py set tenant_password`
+3. A02 additionally needs the OTP/uninstall password:
+   `python tool/manage_secrets.py set uninstall_password`
+4. Ensure feature flag `nplan6711_auto_reenable_ns_client_after_disablement` is
+   **enabled** on the tenant for A01/A02 and **disabled** for A03.
+
+The tests configure `clientAllDisableAutoReenableDuration` on the tenant automatically
+via WebAPI (`util_webui.py` → `pylark-webapi-lib`) and run `nsdiag -u` to sync the
+config down to the client — no manual console steps required.
+
+**Run commands:**
+
+```
+# Dry-run — verify tests collect without errors
+python -m pytest features/nplan_6711_auto_reenable/ --co -q
+
+# Run A01 only (waits ~4 min)
+python -m pytest features/nplan_6711_auto_reenable/ -k a01 -v -s
+
+# Run A02 only (waits ~11 min, needs stored OTP password)
+python -m pytest features/nplan_6711_auto_reenable/ -k a02 -v -s
+
+# Run A03 only (waits ~2 min, negative test)
+python -m pytest features/nplan_6711_auto_reenable/ -k a03 -v -s
+
+# Run all A-series
+python -m pytest features/nplan_6711_auto_reenable/ -k "a01 or a02 or a03" -v -s
+
+# Run P0 only (A01 + A02)
+python -m pytest features/nplan_6711_auto_reenable/ -m p0 -v -s
+```
+
+> **Note:** Use `-s` to see real-time polling output. These are long-running integration tests
+> that poll `nsdiag -f` every 10 seconds until the client re-enables or times out.
+
+**Architecture:** All three tests share the `assert_auto_reenable()` helper (in conftest.py)
+which handles the disable → poll → verify flow. It accepts an `interrupt` callback for
+B-series tests (sleep/wake/reboot during the timer).
 
 ---
 
@@ -327,11 +395,14 @@ There is no export/import — each machine has its own key and its own local sec
 ## Project structure
 
 ```
-.claude/agents/nsc_test_angel.md  # AI agent for NPLAN test development
+.claude/
+    agents/nsc_test_angel.md      # AI agent for NPLAN test development
+    commands/gen-test.md          # /gen-test skill — generate implemented tests from test plan
 data/
     config.json                   # Non-sensitive settings (git-tracked)
     secrets.json                  # Encrypted secrets (gitignored)
 features/
+    nplan_6711_auto_reenable/     # NPLAN-6711: Auto re-enable (A01–A03 implemented)
     nplan_XXXX_<name>/            # One folder per NPLAN
         conftest.py
         test_<feature>.py
@@ -344,6 +415,8 @@ tool/
     gen_test_suite.py             # Markdown → pytest scaffold
     manage_secrets.py             # Encrypted secret management
     pwrtest.exe                   # Windows sleep/wake tool (bundled from stress_test)
+util_client_status.py             # Client status detection via nsdiag -f (all platforms)
+util_webui.py                     # Tenant WebAPI client (pylark-webapi-lib wrapper)
 util_config.py                    # Project config loader
 util_crash.py                     # Crash dump detection
 util_install.py                   # Install / uninstall (all platforms)

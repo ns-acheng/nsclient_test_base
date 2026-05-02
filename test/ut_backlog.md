@@ -6,12 +6,13 @@ Add entries here when code changes create coverage gaps.
 ## Pending Coverage
 
 ### util_client_status.py  (platform-gated)
-- `_parse_win_tooltip` — each keyword branch: fail-closed, enabled+error, enabled+warning, disabled+error, disabled+warning, disabled, enabled, unknown
-- `_service_state_win` — RUNNING → Enabled; STOPPED → Disabled; other → Unknown
-- `_status_mac` — service RUNNING + proc running → Enabled; either missing → Disabled
-- `_nsclient_cli_linux` — "enabled" output → Enabled; "disabled" output → Disabled; empty output → None; FileNotFoundError → None
-- `_nsdiag_tunnel_linux` — "tunnel" + "up" → True; "tunnel" + "down" → False; exception → False
-- `_service_state_linux` — RUNNING → Enabled; STOPPED → Disabled
+- `_parse_nsdiag_field` — finds key::value line; case-insensitive; trailing dot stripped; missing field → None
+- `_map_client_status` — enable → Enabled; disable → Disabled; enroll → Unenrolled; fail close → Fail-closed; error → Disabled (error); unknown raw → Unknown
+- `_run_nsdiag_f` — nsdiag not found → None; empty output → None; happy path parses client+tunnel fields
+- `_mainframe_title_win` — "enroll" in title → Unenrolled; no window → None
+- `_service_state_win` — STOPPED → Disabled; RUNNING → Unknown
+- `_status_mac` — nsdiag success; service STOPPED fallback
+- `_status_linux` — nsdiag success; service STOPPED fallback
 - `is_client_enabled` / `is_client_disabled` — state membership checks
 
 ### util_log.py

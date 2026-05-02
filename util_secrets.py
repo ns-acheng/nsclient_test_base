@@ -38,6 +38,7 @@ SECRET_ORG_KEY                 = "org_key"                 # Linux .run -o
 SECRET_ENROLL_AUTH_TOKEN       = "enroll_auth_token"       # IDP enrollauthtoken=
 SECRET_ENROLL_ENCRYPTION_TOKEN = "enroll_encryption_token" # IDP enrollencryptiontoken=
 SECRET_UNINSTALL_PASSWORD      = "uninstall_password"      # protected uninstall
+SECRET_TENANT_PASSWORD         = "tenant_password"         # tenant admin console login
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 

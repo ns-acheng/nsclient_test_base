@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "data" / "config.json"
 
-SENSITIVE_FIELDS = {"api_token", "password"}
+SENSITIVE_FIELDS = {"api_token", "password", "tenant_password"}
 
 
 @dataclass
@@ -32,6 +32,8 @@ class ConfluenceConfig:
 @dataclass
 class ProjectConfig:
     tenant_hostname: str = ""
+    tenant_username: str = ""
+    tenant_password: str = ""   # injected from secrets — never written to config.json
     is_64bit: bool = True
     log_dir: str = "log"
     confluence: ConfluenceConfig = None  # type: ignore[assignment]
@@ -64,6 +66,7 @@ def load_config(path: Path | None = None) -> ProjectConfig:
 
     config = ProjectConfig(
         tenant_hostname=data.get("tenant_hostname", ""),
+        tenant_username=data.get("tenant_username", ""),
         is_64bit=data.get("is_64bit", True),
         log_dir=data.get("log_dir", "log"),
         confluence=confluence,
@@ -77,11 +80,20 @@ def load_config(path: Path | None = None) -> ProjectConfig:
 def _inject_secrets(config: "ProjectConfig") -> None:
     """Overwrite blank sensitive fields with values from the encrypted secrets store."""
     try:
-        from util_secrets import get_secret, SECRET_CONFLUENCE_API_TOKEN
+        from util_secrets import (
+            get_secret,
+            SECRET_CONFLUENCE_API_TOKEN,
+            SECRET_TENANT_PASSWORD,
+        )
         token = get_secret(SECRET_CONFLUENCE_API_TOKEN)
         if token and not config.confluence.api_token:
             config.confluence.api_token = token
             log.debug("Injected confluence_api_token from secrets store")
+
+        pw = get_secret(SECRET_TENANT_PASSWORD)
+        if pw and not config.tenant_password:
+            config.tenant_password = pw
+            log.debug("Injected tenant_password from secrets store")
     except Exception:
         # secrets store unavailable or key missing — silently continue
         pass

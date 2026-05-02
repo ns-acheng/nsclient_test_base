@@ -9,7 +9,22 @@
       "Bash(python3 *)",
       "Bash(C:\\\\\\\\Python314\\\\\\\\python.exe *)",
       "Bash(git check-ignore *)",
-      "WebFetch(domain:docs.netskope.com)"
+      "WebFetch(domain:docs.netskope.com)",
+      "Bash(tasklist *)",
+      "Bash(cmd *)",
+      "Read(//c/ProgramData/netskope/stagent/**)",
+      "Bash(echo \"---EXIT: $?\")",
+      "Bash(\"C:/Program Files/Netskope/STAgent/nsdiag.exe\" --help)",
+      "Bash(echo \"nsdiag help exit: $?\")",
+      "Bash(\"/c/Program Files/Netskope/STAgent/nsdiag.exe\" --help)",
+      "Bash(\"/c/Program Files/Netskope/STAgent/nsdiag.exe\" -h)",
+      "Read(//c/Program Files/Netskope/**)",
+      "Read(//c/Program Files \\(x86\\)/Netskope/STAgent//**)",
+      "Bash(\"/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe\" -h)",
+      "Bash(\"/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe\" -f)",
+      "Bash(/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe *)",
+      "Bash(\"/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe\" -t disable)",
+      "Bash(not exist *)"
     ]
   }
 }

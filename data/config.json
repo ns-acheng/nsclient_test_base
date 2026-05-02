@@ -1,5 +1,6 @@
 {
     "tenant_hostname": "",
+    "tenant_username": "acheng@netskope.com",
     "is_64bit": true,
     "log_dir": "log",
     "confluence": {
