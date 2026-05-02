@@ -30,7 +30,7 @@ flowchart LR
 python tool/manage_secrets.py init
 ```
 
-For all other secret setup and maintenance details, see [`doc/secrects.md`](doc/secrects.md).
+For all other secret setup and maintenance details, see [`doc/secrets.md`](doc/secrets.md).
 
 ---
 
@@ -128,7 +128,7 @@ python -m pytest -v
 
 ## Secrets commands and details
 
-See [`doc/secrects.md`](doc/secrects.md).
+See [`doc/secrets.md`](doc/secrets.md).
 
 ---
 
@@ -137,7 +137,7 @@ See [`doc/secrects.md`](doc/secrects.md).
 ```
 .claude/
     agents/nsc_test_angel.md      # AI agent for NPLAN test development
-    skills/gen-test.md            # /gen-test skill — generate implemented tests from test plan
+    skills/gen-test/SKILL.md      # /gen-test skill — generate implemented tests from test plan
 data/
     config.json                   # Non-sensitive settings (git-tracked)
     secrets.json                  # Encrypted secrets (gitignored)
