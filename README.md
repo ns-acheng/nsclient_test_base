@@ -5,6 +5,14 @@ Base framework for testing new NSClient (Netskope Client) features across Window
 Each NPLAN gets its own folder under `features/`. Test plans are fetched from Confluence,
 converted to Markdown, then scaffolded into pytest suites.
 
+```mermaid
+flowchart LR
+    A[Fetch test plan from Confluence] 
+        --> B[Scaffold test plan to MarkDown]
+        --> C[Implement tests by skills]
+        --> D[Run the tests]
+```
+
 ---
 
 ## Prerequisites
