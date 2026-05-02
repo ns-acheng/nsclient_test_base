@@ -7,10 +7,10 @@ converted to Markdown, then scaffolded into pytest suites.
 
 ```mermaid
 flowchart LR
-    A[Fetch test plan from Confluence] 
-        --> B[Scaffold test plan to MarkDown]
-        --> C[Implement tests by skills]
-        --> D[Run the tests]
+    A[Fetch test plan] 
+    --> B[Convert the plan to MD]
+    --> C[Implement tests]
+    --> D[Run the tests]
 ```
 
 ---
