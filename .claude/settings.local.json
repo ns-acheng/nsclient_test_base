@@ -24,7 +24,14 @@
       "Bash(\"/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe\" -f)",
       "Bash(/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe *)",
       "Bash(\"/c/Program Files \\(x86\\)/Netskope/STAgent/nsdiag.exe\" -t disable)",
-      "Bash(not exist *)"
+      "Bash(not exist *)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(rm \"C:\\\\git\\\\nsclient_test_base\\\\.claude\\\\commands\\\\gen-test.md\")",
+      "Bash(rmdir \"C:\\\\git\\\\nsclient_test_base\\\\.claude\\\\commands\")",
+      "Bash(mkdir -p \"C:\\\\git\\\\nsclient_test_base\\\\.claude\\\\skills\\\\hello\")",
+      "Bash(mkdir -p \"C:\\\\git\\\\nsclient_test_base\\\\.claude\\\\skills\\\\gen-test\")",
+      "Bash(claude *)",
+      "Bash(rm \"C:\\\\git\\\\nsclient_test_base\\\\.claude\\\\commands\\\\hello.md\")"
     ]
   }
 }

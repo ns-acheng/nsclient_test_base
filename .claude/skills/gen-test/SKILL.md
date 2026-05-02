@@ -1,4 +1,9 @@
-# /gen-test — Generate implemented test cases from a test plan
+---
+name: gen-test
+description: Generate fully implemented pytest test cases from a test plan Markdown file
+disable-model-invocation: true
+argument-hint: <test_plan.md> [TC-IDs...]
+---
 
 Given a test plan Markdown file and specific test case IDs, generate **fully implemented** pytest
 test functions (not just scaffolds). This goes beyond `gen_test_suite.py` by producing real test
@@ -75,7 +80,7 @@ The NPLAN-6711 auto-reenable tests are the gold standard. Study these files:
 
 Key patterns from that implementation:
 - `run_auto_reenable` fixture returns `assert_auto_reenable` callable
-- Tests verify nsconfig preconditions before executing (fail fast with setup instructions)
+- `configure_auto_reenable` factory fixture calls WebAPI then `sync_config()` — teardown clears state
 - `log_validator.seek_to_end()` before the action, then `check_log()` / `check_log_regex()` after
 - OTP tests get password from `util_secrets.get_secret()`, skip if not stored
 - Negative tests (FF off) wait a fixed period and assert state HASN'T changed
@@ -98,6 +103,9 @@ from util_nsclient import (
 
 # Log validation
 from util_log_validator import NsClientLogValidator, init_validator
+
+# Tenant WebAPI (configure tenant settings programmatically)
+from util_webui import WebUIClient   # webui_client session fixture in features/conftest.py
 
 # Service control
 from util_service import query_service, is_running, start_service, stop_service, SVC_CLIENT

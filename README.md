@@ -178,12 +178,33 @@ Each test function gets:
 
 ---
 
-### Step 3 — Implement and run the tests
+### Step 3 — Implement the tests
+
+**Option A — `/gen-test` skill (recommended, requires Claude Code)**
+
+The `/gen-test` skill generates **fully implemented** test functions — not just scaffolds.
+It reads the test plan, analyses shared patterns, creates fixtures and reusable helpers,
+and writes real test logic using the `util_*` toolkit.
+
+```
+/gen-test test_plans/nplan-6711.md A01 A02 A03
+/gen-test test_plans/nplan-6711.md all
+/gen-test test_plans/nplan-6711.md            # lists TCs and asks which to generate
+```
+
+The skill lives at `.claude/skills/gen-test/SKILL.md` and ships with the repo — anyone who
+clones it gets `/gen-test` automatically (requires a one-time Claude Code restart if the
+`.claude/skills/` directory was just created).
+
+**Option B — Manual implementation**
 
 Open the generated `test_<slug>.py` and replace each `raise NotImplementedError` with real
 test logic using the toolkit APIs (`util_service`, `util_nsclient`, `util_process`, etc.).
 
-Run the suite:
+---
+
+### Step 4 — Run the tests
+
 ```
 python -m pytest features/nplan_6711_<slug>/ -v
 ```
@@ -397,7 +418,7 @@ There is no export/import — each machine has its own key and its own local sec
 ```
 .claude/
     agents/nsc_test_angel.md      # AI agent for NPLAN test development
-    commands/gen-test.md          # /gen-test skill — generate implemented tests from test plan
+    skills/gen-test.md            # /gen-test skill — generate implemented tests from test plan
 data/
     config.json                   # Non-sensitive settings (git-tracked)
     secrets.json                  # Encrypted secrets (gitignored)
