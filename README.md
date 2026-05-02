@@ -24,75 +24,17 @@ flowchart LR
 
 ## ⚠️ First-Time Setup — Secrets (Required)
 
-API tokens and passwords are **never stored in plaintext**. They are encrypted at rest using a
-local key that lives **outside the repository**. You must complete this setup before running any
-tool that contacts Confluence or installs NSClient.
-
 ### Step 1 — Generate the encryption key
 
 ```
 python tool/manage_secrets.py init
 ```
 
-This creates:
-```
-C:\Users\<you>\.nsclient_test_base\.secret_key
-```
-
-The key file lives outside the repo and is never committed. It is the only thing that can decrypt
-your stored secrets. **Do not delete it.** If you lose it, all stored secrets must be re-entered.
-
-### Step 2 — Store your secrets
-
-Run each command below and paste the value when prompted. Input is not echoed to the terminal.
-
-```
-python tool/manage_secrets.py set confluence_api_token
-python tool/manage_secrets.py set install_token
-```
-
-Store only the secrets you actually need. Full list of known names:
-
-| Secret name | What it is |
-|---|---|
-| `confluence_api_token` | Atlassian API token — required for `fetch_test_plan.py` |
-| `install_token` | NSClient install token (`msiexec token=...`) |
-| `org_key` | Linux `.run` installer org key (`-o` flag) |
-| `enroll_auth_token` | IDP install mode `enrollauthtoken=` |
-| `enroll_encryption_token` | IDP install mode `enrollencryptiontoken=` |
-| `uninstall_password` | NSClient uninstall password (if protection is enabled) |
-| `tenant_password` | Tenant admin console login password (for WebAPI test setup) |
-
-### Step 3 — Verify
-
-```
-python tool/manage_secrets.py list
-```
-
-Expected output (example):
-```
-Stored secrets (2):
-  confluence_api_token   — Confluence API token (for fetch_test_plan.py)
-  install_token          — NSClient install token (msiexec token=...)
-```
-
-### Where things live
-
-```
-C:\Users\<you>\.nsclient_test_base\
-    .secret_key          ← encryption key — outside repo, never in git
-
-C:\git\nsclient_test_base\
-    data\config.json     ← non-sensitive settings — git-tracked
-    data\secrets.json    ← encrypted ciphertext — gitignored, never commit
-```
-
-`data/secrets.json` is in `.gitignore`. Even if it were accidentally committed, it is useless
-without the key file.
+For all other secret setup and maintenance details, see [`secrects.md`](secrects.md).
 
 ---
 
-## Non-sensitive configuration
+## Setup
 
 Edit `data/config.json` directly. Sensitive fields (api_token, password) are ignored here — use
 `manage_secrets.py set` for those.
@@ -114,44 +56,17 @@ Edit `data/config.json` directly. Sensitive fields (api_token, password) are ign
 
 ## Workflow — NPLAN to Tests
 
-### Step 1 — Fetch the test plan from Confluence
+Detailed guide: [`workflow.md`](workflow.md)
 
-Copy the Confluence page URL and run:
+### Step 1 — Fetch the test plan from Confluence
 
 ```
 python tool/fetch_test_plan.py <confluence_url> --nplan NPLAN-XXXX
 ```
 
-Real example (NPLAN-6711):
 ```
 python tool/fetch_test_plan.py https://netskope.atlassian.net/wiki/spaces/CDTBA/pages/7875198997 --nplan NPLAN-6711
 ```
-
-Produces:
-```
-test_plans/nplan-6711.md      ← structured Markdown with all test cases
-test_plans/nplan-6711.html    ← raw Confluence HTML (only with --save-html, for debugging)
-```
-
-The output filename is always `test_plans/<nplan-id>.md` (e.g. `nplan-6711.md`).  
-The Confluence API token is injected automatically from the secrets store — no manual steps needed.
-
-To also save the raw HTML for parser debugging:
-```
-python tool/fetch_test_plan.py <url> --nplan NPLAN-6711 --save-html
-```
-
-To write to a custom path:
-```
-python tool/fetch_test_plan.py <url> --nplan NPLAN-6711 --output test_plans/my_name.md
-```
-
-**What gets extracted:**
-- Only rows that have an explicit ID in the Confluence table are kept — no invented IDs
-- Test case title = first paragraph of the description cell
-- Steps = bullet list items from the description cell
-- Priority, Platform normalised automatically (`P0/P1/P2`, `Windows`, `macOS`, `Linux`, `All`)
-- Section text (Feature Description, Scope, etc.) included above the test cases
 
 ---
 
@@ -161,53 +76,18 @@ python tool/fetch_test_plan.py <url> --nplan NPLAN-6711 --output test_plans/my_n
 python tool/gen_test_suite.py test_plans/nplan-6711.md
 ```
 
-Produces:
-```
-features/nplan_6711_<slug>/
-    conftest.py          ← feature-specific fixture stubs
-    test_<slug>.py       ← one test_ function per test case
-```
-
-Preview without writing files:
 ```
 python tool/gen_test_suite.py test_plans/nplan-6711.md --dry-run
 ```
-
-Write to a custom folder:
-```
-python tool/gen_test_suite.py test_plans/nplan-6711.md --output features/nplan_6711_auto_reenable
-```
-
-Each test function gets:
-- Correct markers (`@pytest.mark.priority_high`, `@pytest.mark.windows`, `@pytest.mark.automated`, etc.)
-- Docstring with the full steps and expected result from the test plan
-- `raise NotImplementedError  # TODO: implement` for automatable tests
-- `pytest.skip("Manual test")` for manual tests
 
 ---
 
 ### Step 3 — Implement the tests
 
-**Option A — `/gen-test` skill (recommended, requires Claude Code)**
-
-The `/gen-test` skill generates **fully implemented** test functions — not just scaffolds.
-It reads the test plan, analyses shared patterns, creates fixtures and reusable helpers,
-and writes real test logic using the `util_*` toolkit.
-
 ```
 /gen-test test_plans/nplan-6711.md A01 A02 A03
 /gen-test test_plans/nplan-6711.md all
-/gen-test test_plans/nplan-6711.md            # lists TCs and asks which to generate
 ```
-
-The skill lives at `.claude/skills/gen-test/SKILL.md` and ships with the repo — anyone who
-clones it gets `/gen-test` automatically (requires a one-time Claude Code restart if the
-`.claude/skills/` directory was just created).
-
-**Option B — Manual implementation**
-
-Open the generated `test_<slug>.py` and replace each `raise NotImplementedError` with real
-test logic using the toolkit APIs (`util_service`, `util_nsclient`, `util_process`, etc.).
 
 ---
 
@@ -217,33 +97,8 @@ test logic using the toolkit APIs (`util_service`, `util_nsclient`, `util_proces
 python -m pytest features/nplan_6711_<slug>/ -v
 ```
 
-Filter by marker:
 ```
-python -m pytest features/ -m p0                      # P0 only
-python -m pytest features/ -m p1                      # P1 only
-python -m pytest features/ -m "p0 and windows"        # P0 Windows only
-python -m pytest features/ -m "windows and automated" # Windows automatable only
-python -m pytest features/ -m "not manual"            # skip manual tests
-```
-
----
-
-### Full example — scaffold workflow
-
-```
-# 1. Fetch
-python tool/fetch_test_plan.py ^
-    https://netskope.atlassian.net/wiki/spaces/CDTBA/pages/7875198997 ^
-    --nplan NPLAN-6711
-
-# 2. Scaffold
-python tool/gen_test_suite.py test_plans/nplan-6711.md
-
-# 3. Check what was created
-python -m pytest features/nplan_6711_wip_nplan_6711_auto_re_enable/ --co -q
-
-# 4. Run P0 tests only
-python -m pytest features/nplan_6711_wip_nplan_6711_auto_re_enable/ -m priority_high -v
+python -m pytest features/ -m "windows and automated" -v
 ```
 
 ---
@@ -314,72 +169,7 @@ B-series tests (sleep/wake/reboot during the timer).
 ---
 
 ## Power Management
-
-`util_power.py` provides sleep/wake and reboot control for tests that involve timer interrupts,
-reboots, and sleep state transitions (e.g. NPLAN-6711 B-series tests).
-
-### Platform support
-
-| Function | Windows | macOS | Linux |
-|---|---|---|---|
-| `enter_s0_and_wake(sec)` | pwrtest `/cs` → monitor-off ctypes fallback | `pmset displaysleepnow` + `caffeinate` | returns `False` |
-| `enter_s1_and_wake(sec)` | pwrtest `/sleep /s:1` → `SetSuspendState` fallback | `pmset sleepnow` + scheduled wake | returns `False` |
-| `enter_s4_and_wake(sec)` | pwrtest `/sleep /s:s4` → `SetSuspendState(hibernate)` | mapped to system sleep | returns `False` |
-| `is_sleep_state_available(name)` | `powercfg /a` (EN + ZH-TW) | `pmset -g cap` | `False` |
-| `enable_wake_timers()` | 3× `powercfg` GUIDs | `True` (N/A) | `False` |
-| `reboot()` | `shutdown /r /t 0` | `sudo shutdown -r now` | `sudo reboot` |
-
-### Usage in tests
-
-```python
-from util_power import (
-    enter_s0_and_wake,
-    enter_s1_and_wake,
-    enter_s4_and_wake,
-    is_sleep_state_available,
-    enable_wake_timers,
-    reboot,
-)
-
-# Check availability before entering a sleep state
-if is_sleep_state_available("Hibernate"):
-    enter_s4_and_wake(duration_seconds=300)
-
-# Enable wake timers before any sleep test on Windows
-enable_wake_timers()
-enter_s1_and_wake(duration_seconds=120)
-```
-
-### Sleep state names for `is_sleep_state_available`
-
-| Name | State |
-|---|---|
-| `"Standby (S0 Low Power Idle)"` | Modern Standby / AOAC |
-| `"Standby (S1)"` | Legacy Standby |
-| `"Hibernate"` | S4 Hibernate |
-
-### Windows requirements
-
-- **Admin privileges required** — `powercfg` and sleep state transitions need elevation.
-  Use the `require_admin` fixture in feature tests.
-- **pwrtest.exe** — bundled at `tool/pwrtest.exe`. Used for reliable sleep cycling.
-  Falls back to ctypes if missing, but pwrtest is preferred.
-- **Wake timers** — call `enable_wake_timers()` once before sleep tests, or add it to
-  your feature `conftest.py` as a session-scoped fixture.
-
-### Platform safety
-
-Power functions on Linux return `False` cleanly — they never import Windows-only modules.
-Tag sleep-state tests with the appropriate platform marker so they are auto-skipped on
-other platforms:
-
-```python
-@pytest.mark.windows
-@pytest.mark.priority_medium
-def test_b04_s0_modern_standby(require_admin):
-    enable_wake_timers()
-    assert enter_s0_and_wake(duration_seconds=60)
-```
+Detailed guide: [`power.md`](power.md)
 
 ---
 
@@ -393,31 +183,9 @@ python -m pytest -v
 
 ---
 
-## Managing secrets
+## Secrets commands and details
 
-```
-python tool/manage_secrets.py init              # First-time: generate key
-python tool/manage_secrets.py set <name>        # Store/update a secret (prompts, no echo)
-python tool/manage_secrets.py get <name>        # Print decrypted value
-python tool/manage_secrets.py list              # List stored names
-python tool/manage_secrets.py delete <name>     # Remove a secret
-python tool/manage_secrets.py info              # Show key path, store path, all known names
-```
-
-### Rotating a secret
-
-```
-python tool/manage_secrets.py set confluence_api_token   # re-enter new value, overwrites old
-```
-
-### Moving to a new machine
-
-The secrets store (`data/secrets.json`) is gitignored and not in the repo. On a new machine:
-
-1. `python tool/manage_secrets.py init` — generates a **new** key
-2. Re-enter all secrets: `python tool/manage_secrets.py set <name>` for each one
-
-There is no export/import — each machine has its own key and its own local secrets file.
+See [`secrects.md`](secrects.md).
 
 ---
 
